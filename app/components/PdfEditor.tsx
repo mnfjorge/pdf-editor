@@ -225,7 +225,8 @@ export default function PdfEditor() {
           const textWidth = font.widthOfTextAtSize(o.text, o.fontSize);
           const xPdf = o.x * pageWidth;
           const yTop = o.y * pageHeight; // normalized from top
-          const yPdf = pageHeight - yTop - o.fontSize; // convert top-origin to bottom-origin
+          const ascent = getFontAscentAtSize(font, o.fontSize);
+          const yPdf = pageHeight - yTop - ascent; // convert top-origin to baseline-origin
           page.drawText(o.text, {
             x: xPdf,
             y: yPdf,
@@ -263,6 +264,22 @@ export default function PdfEditor() {
     const g = Math.min(255, Math.max(0, parseInt(m[2], 10)));
     const b = Math.min(255, Math.max(0, parseInt(m[3], 10)));
     return [r / 255, g / 255, b / 255];
+  }
+
+  function getFontAscentAtSize(font: any, size: number): number {
+    try {
+      if (font && typeof font.ascentAtSize === 'function') {
+        const v = font.ascentAtSize(size);
+        if (typeof v === 'number' && isFinite(v)) return v;
+      }
+    } catch {}
+    try {
+      if (font && typeof font.heightAtSize === 'function') {
+        const h = font.heightAtSize(size);
+        if (typeof h === 'number' && isFinite(h)) return h * 0.8; // approximate ascent proportion
+      }
+    } catch {}
+    return size * 0.8; // safe fallback
   }
 
   return (
