@@ -23,6 +23,7 @@ export default function PdfEditor() {
   const [uploading, setUploading] = React.useState(false);
   const [pdfUrl, setPdfUrl] = React.useState<string | null>(null);
   const [pdfArrayBuffer, setPdfArrayBuffer] = React.useState<ArrayBuffer | null>(null);
+  const [exportArrayBuffer, setExportArrayBuffer] = React.useState<ArrayBuffer | null>(null);
   const [pdfDoc, setPdfDoc] = React.useState<PDFDocumentProxy | null>(null);
   const [numPages, setNumPages] = React.useState(0);
   const [pageSizes, setPageSizes] = React.useState<{ width: number; height: number }[]>([]);
@@ -57,7 +58,11 @@ export default function PdfEditor() {
       const data = (await res.json()) as { url: string };
       setPdfUrl(data.url);
       const ab = await fetch(data.url).then(r => r.arrayBuffer());
-      setPdfArrayBuffer(ab);
+      // Keep a rendering copy (may be consumed by pdf.js internals) and a separate immutable copy for export
+      const renderCopy = ab.slice(0);
+      const exportCopy = ab.slice(0);
+      setPdfArrayBuffer(renderCopy);
+      setExportArrayBuffer(exportCopy);
     } catch (err: any) {
       console.error(err);
       alert(err.message || 'Upload failed');
@@ -143,9 +148,9 @@ export default function PdfEditor() {
   }
 
   async function handleExport() {
-    if (!pdfArrayBuffer) return;
+    if (!exportArrayBuffer) return;
     try {
-      const pdfDocLib = await PDFDocument.load(pdfArrayBuffer);
+      const pdfDocLib = await PDFDocument.load(exportArrayBuffer.slice(0));
       const font = await pdfDocLib.embedFont(StandardFonts.Helvetica);
 
       for (let i = 0; i < pdfDocLib.getPageCount(); i++) {
