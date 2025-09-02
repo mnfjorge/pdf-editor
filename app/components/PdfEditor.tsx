@@ -266,7 +266,7 @@ export default function PdfEditor() {
                           cancel="input,textarea,select,button"
                         >
                           <div className="absolute">
-                            <div className="group rounded px-2 py-1 bg-yellow-100 border border-yellow-300 shadow cursor-move">
+                            <div className="group rounded px-2 py-1 bg-transparent border border-transparent hover:border-slate-300 cursor-move">
                               <input
                                 className="bg-transparent outline-none text-gray-900"
                                 value={o.text}
