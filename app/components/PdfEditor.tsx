@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from 'pdfjs-dist';
 import Draggable from 'react-draggable';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
@@ -30,6 +31,13 @@ export default function PdfEditor() {
   const [rendering, setRendering] = React.useState(false);
 
   const canvasRefs = React.useRef<HTMLCanvasElement[]>([]);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  function getOverlaysStorageKey(url: string) {
+    return `overlays:${encodeURIComponent(url)}`;
+  }
 
   function setCanvasRef(index: number, el: HTMLCanvasElement | null) {
     if (el) {
@@ -65,6 +73,60 @@ export default function PdfEditor() {
       setUploading(false);
     }
   }
+
+  // Reflect selected PDF in the URL (?file=...) for reloadability
+  React.useEffect(() => {
+    if (!pdfUrl) return;
+    const current = new URLSearchParams(Array.from(searchParams.entries()));
+    if (current.get('file') !== pdfUrl) {
+      current.set('file', pdfUrl);
+      router.replace(`${pathname}?${current.toString()}`, { scroll: false });
+    }
+  }, [pdfUrl, pathname, router, searchParams]);
+
+  // On initial load or when URL changes, load PDF from ?file=...
+  React.useEffect(() => {
+    const paramUrl = searchParams.get('file');
+    if (!paramUrl) return;
+    if (paramUrl === pdfUrl) return;
+    (async () => {
+      try {
+        setPdfUrl(paramUrl);
+        const ab = await fetch(paramUrl).then(r => r.arrayBuffer());
+        setPdfArrayBuffer(ab);
+      } catch (e) {
+        console.error(e);
+        alert('Failed to load PDF from URL');
+      }
+    })();
+  }, [searchParams, pdfUrl]);
+
+  // Restore overlays for current PDF from localStorage when pdfUrl changes
+  React.useEffect(() => {
+    if (!pdfUrl) return;
+    try {
+      const raw = localStorage.getItem(getOverlaysStorageKey(pdfUrl));
+      if (raw) {
+        const parsed = JSON.parse(raw) as PageOverlays;
+        setOverlays(parsed);
+      } else {
+        setOverlays({});
+      }
+    } catch (e) {
+      console.error(e);
+      setOverlays({});
+    }
+  }, [pdfUrl]);
+
+  // Persist overlays to localStorage keyed by current PDF URL
+  React.useEffect(() => {
+    if (!pdfUrl) return;
+    try {
+      localStorage.setItem(getOverlaysStorageKey(pdfUrl), JSON.stringify(overlays));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [overlays, pdfUrl]);
 
   // Load and render PDF on canvas when pdfArrayBuffer changes
   React.useEffect(() => {
