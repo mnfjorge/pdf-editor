@@ -6,6 +6,9 @@ import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from 'pdfjs-d
 import Draggable from 'react-draggable';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
+// Module-scope shared canvas for measuring text; avoids re-creating per render
+let __autosizeMeasureCanvas: HTMLCanvasElement | null = null;
+
 type OverlayItem = {
   id: string;
   text: string;
@@ -279,7 +282,51 @@ export default function PdfEditor() {
         if (typeof h === 'number' && isFinite(h)) return h * 0.8; // approximate ascent proportion
       }
     } catch {}
-    return size * 0.8; // safe fallback
+    return size * 0.8; // safe fallbac
+  // Shared canvas for accurate text width measurement (module-scoped above)
+
+  function AutosizeInput(props: {
+    value: string;
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    className?: string;
+    style?: React.CSSProperties;
+    minWidth?: number;
+  }) {
+    const { value, onChange, className, style, minWidth = 20 } = props;
+    const inputRef = React.useRef<HTMLInputElement | null>(null);
+    const [width, setWidth] = React.useState<number>(minWidth);
+
+    React.useLayoutEffect(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      const cs = getComputedStyle(el);
+      const canvas = __autosizeMeasureCanvas || (__autosizeMeasureCanvas = document.createElement('canvas'));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      // Include line-height to satisfy full font shorthand
+      const fontShorthand = `${cs.fontStyle} ${cs.fontVariant} ${cs.fontWeight} ${cs.fontSize} / ${cs.lineHeight} ${cs.fontFamily}`;
+      ctx.font = fontShorthand;
+      const metrics = ctx.measureText(value || ' ');
+      const paddingLeft = parseFloat(cs.paddingLeft || '0');
+      const paddingRight = parseFloat(cs.paddingRight || '0');
+      const borderLeft = parseFloat(cs.borderLeftWidth || '0');
+      const borderRight = parseFloat(cs.borderRightWidth || '0');
+      const computedWidth = Math.ceil(metrics.width + paddingLeft + paddingRight + borderLeft + borderRight + 1);
+      setWidth(Math.max(minWidth, computedWidth));
+    }, [value, minWidth, style?.fontSize, style?.fontFamily, style?.fontWeight]);
+
+    return (
+      <input
+        ref={inputRef}
+        className={className}
+        value={value}
+        onChange={onChange}
+        style={{ ...style, width, whiteSpace: 'nowrap' }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') e.preventDefault();
+        }}
+      />
+    );
   }
 
   return (
@@ -351,11 +398,13 @@ export default function PdfEditor() {
                         >
                           <div className="absolute">
                             <div className="group rounded px-2 py-1 bg-transparent border border-transparent hover:border-slate-300 cursor-move">
-                              <input
+                              {/* Single autosizing input (no wrapping, grows with content) */}
+                              <AutosizeInput
                                 className="bg-transparent outline-none text-gray-900"
                                 value={o.text}
                                 onChange={e => updateOverlay(pageIndex, o.id, { text: e.target.value })}
-                                style={{ fontSize: o.fontSize, color: o.color, width: Math.max(80, o.text.length * (o.fontSize * 0.6)) }}
+                                style={{ fontSize: o.fontSize, color: o.color }}
+                                minWidth={40}
                               />
                               <div className="hidden group-hover:flex items-center gap-2 pt-1 text-xs text-gray-600">
                                 <input
