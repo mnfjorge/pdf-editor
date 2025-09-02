@@ -16,8 +16,8 @@ type OverlayItem = {
 
 type PageOverlays = Record<number, OverlayItem[]>;
 
-// Configure PDF.js worker (hosted via unpkg to keep setup simple)
-GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@5.4.149/build/pdf.worker.min.mjs';
+// Configure PDF.js worker (local file served from /public)
+GlobalWorkerOptions.workerSrc = '/pdf.worker.mjs';
 
 export default function PdfEditor() {
   const [uploading, setUploading] = React.useState(false);
@@ -100,7 +100,7 @@ export default function PdfEditor() {
           if (!ctx) continue;
           canvas.width = viewport.width;
           canvas.height = viewport.height;
-          await page.render({ canvasContext: ctx, viewport }).promise;
+          await page.render({ canvasContext: ctx, viewport, canvas }).promise;
         }
       } catch (e) {
         console.error(e);

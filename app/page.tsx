@@ -1,3 +1,5 @@
+import dynamic from 'next/dynamic';
+const PdfEditor = dynamic(() => import('./components/PdfEditor'), { ssr: false });
 
 export default function Page() {
   return (
@@ -9,14 +11,7 @@ export default function Page() {
         </div>
       </div>
       {/* Editor */}
-      {/* @ts-expect-error Server Component type boundary */}
-      <EditorWrapper />
+      <PdfEditor />
     </main>
   );
-}
-
-function EditorWrapper() {
-  // Isolated wrapper to avoid RSC boundary warnings
-  const PdfEditor = require('./components/PdfEditor').default;
-  return <PdfEditor />;
 }
