@@ -30,10 +30,18 @@ export default function PdfEditor() {
   const [rendering, setRendering] = React.useState(false);
 
   const canvasRefs = React.useRef<HTMLCanvasElement[]>([]);
+  const pageContainerRefs = React.useRef<HTMLDivElement[]>([]);
+  const [displayScales, setDisplayScales] = React.useState<number[]>([]);
 
   function setCanvasRef(index: number, el: HTMLCanvasElement | null) {
     if (el) {
       canvasRefs.current[index] = el;
+    }
+  }
+
+  function setPageContainerRef(index: number, el: HTMLDivElement | null) {
+    if (el) {
+      pageContainerRefs.current[index] = el;
     }
   }
 
@@ -114,6 +122,37 @@ export default function PdfEditor() {
       cancelled = true;
     };
   }, [pdfArrayBuffer]);
+
+  // Compute responsive display scales per page based on available width
+  React.useEffect(() => {
+    if (!pageSizes.length) return;
+
+    const observers: ResizeObserver[] = [];
+
+    pageSizes.forEach((size, i) => {
+      const el = pageContainerRefs.current[i];
+      if (!el) return;
+
+      const compute = () => {
+        const availableWidth = el.clientWidth || size.width;
+        const scale = Math.min(1, availableWidth / size.width);
+        setDisplayScales(prev => {
+          const next = prev.slice();
+          next[i] = Number.isFinite(scale) && scale > 0 ? scale : 1;
+          return next;
+        });
+      };
+
+      compute();
+      const ro = new ResizeObserver(compute);
+      ro.observe(el);
+      observers.push(ro);
+    });
+
+    return () => {
+      observers.forEach(o => o.disconnect());
+    };
+  }, [pageSizes, numPages]);
 
   function addTextOverlay(pageIndex: number) {
     const size = pageSizes[pageIndex];
@@ -200,23 +239,23 @@ export default function PdfEditor() {
 
   return (
     <div className="px-4 py-6 max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
+        <div className="flex w-full sm:w-auto items-center gap-3">
           <label className="inline-flex items-center px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 cursor-pointer">
             <input type="file" accept="application/pdf" className="hidden" onChange={handleFileSelect} />
             {uploading ? 'Uploading…' : pdfUrl ? 'Replace PDF' : 'Upload PDF'}
           </label>
           {pdfUrl ? (
-            <span className="text-sm text-gray-600 truncate max-w-xs">{pdfUrl}</span>
+            <span className="text-sm text-gray-600 truncate max-w-full sm:max-w-xs">{pdfUrl}</span>
           ) : (
             <span className="text-sm text-gray-500">Upload a single PDF to begin</span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 self-stretch sm:self-auto">
           <button
             onClick={handleExport}
             disabled={!pdfArrayBuffer}
-            className="px-4 py-2 rounded-md bg-emerald-600 text-white disabled:opacity-50 hover:bg-emerald-700"
+            className="px-4 py-2 rounded-md bg-emerald-600 text-white disabled:opacity-50 hover:bg-emerald-700 w-full sm:w-auto"
           >
             Export PDF
           </button>
@@ -233,6 +272,7 @@ export default function PdfEditor() {
             const pageIndex = i;
             const size = pageSizes[pageIndex] || { width: 595, height: 842 };
             const pageOverlays = overlays[pageIndex] || [];
+            const scale = displayScales[pageIndex] ?? 1;
             return (
               <div key={pageIndex} className="border rounded-md shadow-sm bg-white">
                 <div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50">
@@ -246,59 +286,63 @@ export default function PdfEditor() {
                     </button>
                   </div>
                 </div>
-                <div className="relative overflow-auto p-4">
-                  <div className="relative mx-auto" style={{ width: size.width, height: size.height }}>
-                    <canvas ref={el => setCanvasRef(pageIndex, el)} className="block" />
-                    {/* Overlays */}
-                    {pageOverlays.map(o => {
-                      const left = o.x * size.width;
-                      const top = o.y * size.height;
-                      return (
-                        <Draggable
-                          key={o.id}
-                          defaultPosition={{ x: left, y: top }}
-                          bounds="parent"
-                          onStop={(e, data) => {
-                            const newX = Math.min(1, Math.max(0, data.x / size.width));
-                            const newY = Math.min(1, Math.max(0, data.y / size.height));
-                            updateOverlay(pageIndex, o.id, { x: newX, y: newY });
-                          }}
-                          cancel="input,textarea,select,button"
-                        >
-                          <div className="absolute">
-                            <div className="group rounded px-2 py-1 bg-yellow-100 border border-yellow-300 shadow cursor-move">
-                              <input
-                                className="bg-transparent outline-none text-gray-900"
-                                value={o.text}
-                                onChange={e => updateOverlay(pageIndex, o.id, { text: e.target.value })}
-                                style={{ fontSize: o.fontSize, color: o.color, width: Math.max(80, o.text.length * (o.fontSize * 0.6)) }}
-                              />
-                              <div className="hidden group-hover:flex items-center gap-2 pt-1 text-xs text-gray-600">
+                <div ref={el => setPageContainerRef(pageIndex, el)} className="relative overflow-auto p-4">
+                  {/* Reserve scaled height in layout, content inside is scaled via transform */}
+                  <div className="relative mx-auto" style={{ width: size.width, height: size.height * scale }}>
+                    <div className="relative" style={{ width: size.width, height: size.height, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
+                      <canvas ref={el => setCanvasRef(pageIndex, el)} className="block" />
+                      {/* Overlays */}
+                      {pageOverlays.map(o => {
+                        const left = o.x * size.width;
+                        const top = o.y * size.height;
+                        return (
+                          <Draggable
+                            key={o.id}
+                            defaultPosition={{ x: left, y: top }}
+                            bounds="parent"
+                            onStop={(e, data) => {
+                              const newX = Math.min(1, Math.max(0, data.x / size.width));
+                              const newY = Math.min(1, Math.max(0, data.y / size.height));
+                              updateOverlay(pageIndex, o.id, { x: newX, y: newY });
+                            }}
+                            cancel="input,textarea,select,button"
+                            scale={scale}
+                          >
+                            <div className="absolute">
+                              <div className="group rounded px-2 py-1 bg-yellow-100 border border-yellow-300 shadow cursor-move">
                                 <input
-                                  type="color"
-                                  value={o.color}
-                                  onChange={e => updateOverlay(pageIndex, o.id, { color: e.target.value })}
+                                  className="bg-transparent outline-none text-gray-900"
+                                  value={o.text}
+                                  onChange={e => updateOverlay(pageIndex, o.id, { text: e.target.value })}
+                                  style={{ fontSize: o.fontSize, color: o.color, width: Math.max(80, o.text.length * (o.fontSize * 0.6)) }}
                                 />
-                                <input
-                                  type="range"
-                                  min={8}
-                                  max={72}
-                                  step={1}
-                                  value={o.fontSize}
-                                  onChange={e => updateOverlay(pageIndex, o.id, { fontSize: parseInt(e.target.value, 10) })}
-                                />
-                                <button
-                                  className="px-2 py-0.5 rounded bg-red-600 text-white"
-                                  onClick={() => removeOverlay(pageIndex, o.id)}
-                                >
-                                  Delete
-                                </button>
+                                <div className="hidden group-hover:flex group-focus-within:flex items-center gap-2 pt-1 text-xs text-gray-600">
+                                  <input
+                                    type="color"
+                                    value={o.color}
+                                    onChange={e => updateOverlay(pageIndex, o.id, { color: e.target.value })}
+                                  />
+                                  <input
+                                    type="range"
+                                    min={8}
+                                    max={72}
+                                    step={1}
+                                    value={o.fontSize}
+                                    onChange={e => updateOverlay(pageIndex, o.id, { fontSize: parseInt(e.target.value, 10) })}
+                                  />
+                                  <button
+                                    className="px-2 py-0.5 rounded bg-red-600 text-white"
+                                    onClick={() => removeOverlay(pageIndex, o.id)}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </Draggable>
-                      );
-                    })}
+                          </Draggable>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>
